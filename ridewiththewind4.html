@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>RideWithTheWind</title>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+	<link rel="stylesheet" href="test.css">
+	<style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+		}
+	  #wrapper {
+		position: relative;
+		height: 100%;
+		z-index: 0px;
+		}
+	  #map {
+		position: absolute;
+		height: 100%;
+		width: 100%;
+		z-index: 1px;
+		}
+    </style>
+  </head>
+  <body onload="initMap()">
+  <div id="wrapper">
+    <div id="map"></div>
+	<div class="dropdown">
+	<button onclick="dropDownButton()" id="dropDownButton" class="dropbtn">PlanTheRide</button>
+		<div id="myDropdown" class="dropdown-content"><br>
+		<input type="text" size="4" id="dist" placeholder="Distance">  km</><br><br>
+		<input type="checkbox" id="r_trip" checked>Round trip</><br><br>
+		<input type="checkbox" id="cw" checked>Clockwise</><br><br>
+		<button type="button" class="button" id="submit" onclick="drawRouteWaypoints(dist, r_trip, cw)">Submit</button>
+		</div>
+	</div>
+  </div>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.js"></script>
+    <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBgmced_FGDFDyPyJ64bBLYx-LH2P_CAVI"></script>
+    <script type="text/javascript">
+      // Note: This page requires that you consent to location sharing when
+      // prompted by your browser. If you see the error "The Geolocation service
+      // failed.", it means you probably did not give permission for the browser to
+      // locate you.
+      var pos;
+	    var distance;
+  	  var r_trip;
+  	  var cw;
+      var ws_winddir;
+      var markers = [];
+      var urlParams = [];
+      var wayPoints = {};
+  	  var routes = [];
+      var map;
+      var Colors = [
+  		"#FF0000", 
+  		"#00FF00", 
+  		"#0000FF", 
+  		"#FFFFFF", 
+  		"#000000", 
+  		"#FFFF00", 
+  		"#00FFFF", 
+  		"#FF00FF"
+  	  ];
+      var routeNum = 0;
+	  
+      function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: {lat: 52.22, lng: 5.2},
+        zoom: 10,
+	  	mapTypeControlOptions: {
+	  		mapTypeIds: []
+		  	}
+      });
+
+      // Try HTML5 geolocation.
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+          pos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+            };
+            map.setCenter(pos);
+	          getWindvane();
+            }
+	        );
+        }
+    	else {
+	      alert("No geoloc!");
+	    }
+ 	};
+	// When the basic map is loaded, we have the geoloc
+	// Call the weather service with lat/lon
+	function getWindvane() {
+	$.ajax({
+	type: "GET",
+	url: "/api/v3/weather",
+	data: {
+	    "lat": pos.lat,
+	    "lon": pos.lng
+	      },
+	dataType: "json",
+	success: function(response) {
+		ws_winddir = response.wdir;
+    ws_speed = response.wspd;
+		// We add the marker here as ws_winddir has a value now.
+		// Value is returned as text, so parseInt is needed
+		// (float can be used too)
+	    var wind_marker = new google.maps.Marker({
+	   	  position: pos,
+		    icon: {
+		      path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+		      origin: new google.maps.Point(0, 0),
+		      anchor: new google.maps.Point(0, 18),
+		      scale: 4,
+		      rotation: parseInt(ws_winddir),
+          labelOrigin: new google.maps.Point(-6, -6)
+		    },
+        label: String(ws_speed),
+		    map: map
+	    });
+		  markers.push(wind_marker);
+      var start_finish = {
+        url: '/images/start_finish4.png'
+      }
+      var start_finish_marker = new google.maps.Marker({
+        position: pos,
+        icon: start_finish,
+        map: map,
+      });
+   		}
+	});
+	};
+
+	function drawRouteMarker(latlon, num) {
+    if (num == 0 || num == 4) {
+    }
+    else {
+      marker = new google.maps.Marker({
+	    position: latlon,
+	    title: "Waypoint: " + String(num),
+		  label: String(num),
+	    map: map,
+	    });
+	    markers.push(marker);
+    }
+	};
+
+	function drawRouteWaypoints() {
+	    distance = document.getElementById("dist").value;
+	    r_trip = document.getElementById("r_trip").checked;
+		  cw = document.getElementById("cw").checked;
+	    $.ajax({
+	    type: "GET",
+            url: "api/v3/route/waypoints",
+	      data: {
+	            "lat": pos.lat,
+	            "lon": pos.lng,
+				"ws_winddir": ws_winddir, 
+				"distance": distance,
+				"r_trip": r_trip,
+				"cw": cw
+        	    },
+	      dataType: "json",
+	      success: function(response) {
+		var way_pts = JSON.parse(response).waypoints;
+		$.each(way_pts, function(k) {
+		  var markerLatLng = new google.maps.LatLng(way_pts[k].lat, way_pts[k].lng);
+		  drawRouteMarker(markerLatLng, k);
+		  });
+	  	var bounds = new google.maps.LatLngBounds();
+		  for (var i = 0; i < markers.length; i++) {
+		    bounds.extend(markers[i].getPosition());
+		  }
+		routes.push(way_pts)
+		drawRouteSegments(way_pts);
+		map.panToBounds(bounds);
+		map.fitBounds(bounds);
+		dropDownButton();
+	       }
+	    });
+	};
+
+	function drawRouteSegments(way_pts) {
+	    routeSegments = [];
+	    $.ajax({
+	    type: "POST",
+	    url: "/api/v3/route/segments",
+	      data: JSON.stringify(way_pts),
+	      contentType: "application/json; charset=utf-8",
+	      dataType: "json",
+	      success: function(response) {
+		      $.each(response, function(k) {
+		      var seg = new google.maps.LatLng(response[k].lat, response[k].lng);
+		      routeSegments.push(seg);
+		    });
+		    var cycleRoute = new google.maps.Polyline({
+		    path: routeSegments,
+		    geodesic: true,
+		    strokeColor: Colors[routeNum],
+		    strokeOpacity: 1.0,
+		    strokeWeight: 2
+	    	});
+	    	cycleRoute.setMap(map);
+		    routes.push(routeSegments);
+		    routeNum++;
+		    //for (var i =0; i < routes.length;i++) {
+			  //  console.log(routes[i]);
+			  //}
+		    }
+	    });
+	};
+	function dropDownButton() {
+    document.getElementById("myDropdown").classList.toggle("show");
+	}
+
+	</script>
+  </body>
+</html>

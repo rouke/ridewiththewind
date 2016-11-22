@@ -26,25 +26,30 @@
   </head>
   <body onload="initMap()">
   <div id="wrapper">
-    <div id="map"></div>
+  <div id="map"></div>
 	<div class="dropdown">
 	<button onclick="dropDownButton()" id="dropDownButton" class="dropbtn">PlanTheRide</button>
-		<div id="myDropdown" class="dropdown-content"><br>
-		<input type="text" size="4" id="dist" placeholder="Distance">  km</><br><br>
+		<div id="myDropdown" size=4 class="dropdown-content"><br>
+		<input type="text" id="dist" placeholder="Distance">  km</><br><br>
 		<input type="checkbox" id="r_trip" checked>Round trip</><br><br>
 		<input type="checkbox" id="cw" checked>Clockwise</><br><br>
 		<button type="button" class="button" id="submit" onclick="drawRouteWaypoints(dist, r_trip, cw)">Submit</button>
 		</div>
 	</div>
   </div>
-    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.js"></script>
-    <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBgmced_FGDFDyPyJ64bBLYx-LH2P_CAVI"></script>
+    // <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.js"></script>
+    <script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+    <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBgmced_FGDFDyPyJ64bBLYx-LH2P_CAVI&libraries=places"></script>
     <script type="text/javascript">
       // Note: This page requires that you consent to location sharing when
       // prompted by your browser. If you see the error "The Geolocation service
       // failed.", it means you probably did not give permission for the browser to
       // locate you.
       var pos;
+      var start;
+      var finish;
+      var start_finish;
 	    var distance;
   	  var r_trip;
   	  var cw;
@@ -53,12 +58,15 @@
       var urlParams = [];
       var wayPoints = {};
   	  var routes = [];
+      var checkbox = [];
       var map;
+      var service;
+      var infowindow;
+      var cycleRoute = [];
       var Colors = [
   		"#FF0000", 
   		"#00FF00", 
   		"#0000FF", 
-  		"#FFFFFF", 
   		"#000000", 
   		"#FFFF00", 
   		"#00FFFF", 
@@ -78,11 +86,11 @@
       // Try HTML5 geolocation.
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(function(position) {
-          pos = {
+          start = {
             lat: position.coords.latitude,
             lng: position.coords.longitude
             };
-            map.setCenter(pos);
+            map.setCenter(start);
 	          getWindvane();
             }
 	        );
@@ -98,8 +106,8 @@
 	type: "GET",
 	url: "/api/v3/weather",
 	data: {
-	    "lat": pos.lat,
-	    "lon": pos.lng
+	    "lat": start.lat,
+	    "lon": start.lng
 	      },
 	dataType: "json",
 	success: function(response) {
@@ -109,7 +117,7 @@
 		// Value is returned as text, so parseInt is needed
 		// (float can be used too)
 	    var wind_marker = new google.maps.Marker({
-	   	  position: pos,
+	   	  position: start,
 		    icon: {
 		      path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
 		      origin: new google.maps.Point(0, 0),
@@ -126,7 +134,7 @@
         url: '/images/start_finish4.png'
       }
       var start_finish_marker = new google.maps.Marker({
-        position: pos,
+        position: start,
         icon: start_finish,
         map: map,
       });
@@ -147,7 +155,32 @@
 	    markers.push(marker);
     }
 	};
+      
+  function drawPoIMarker(latlon) {
+    marker = markers[3];
+    rest_stop = marker.position;
+    var request = {
+      location: rest_stop,
+      radius: 5000,
+      types: ['cafe']
+    };
+    service = new google.maps.places.PlacesService(map);
+    service.nearbySearch(request, poi_callback);
+  }
 
+  function poi_callback(results, status) {
+    marker = markers[3];
+    if (status == google.maps.places.PlacesServiceStatus.OK) {
+      // console.log(results[0]);
+      var infowindow = new google.maps.InfoWindow({
+        content: results[0].name
+      });
+      marker.addListener('click', function() {
+        infowindow.open(map, marker);
+      });
+    }
+  }
+      
 	function drawRouteWaypoints() {
 	    distance = document.getElementById("dist").value;
 	    r_trip = document.getElementById("r_trip").checked;
@@ -156,8 +189,8 @@
 	    type: "GET",
             url: "api/v3/route/waypoints",
 	      data: {
-	            "lat": pos.lat,
-	            "lon": pos.lng,
+	            "lat": start.lat,
+	            "lon": start.lng,
 				"ws_winddir": ws_winddir, 
 				"distance": distance,
 				"r_trip": r_trip,
@@ -166,15 +199,15 @@
 	      dataType: "json",
 	      success: function(response) {
 		var way_pts = JSON.parse(response).waypoints;
-		$.each(way_pts, function(k) {
-		  var markerLatLng = new google.maps.LatLng(way_pts[k].lat, way_pts[k].lng);
-		  drawRouteMarker(markerLatLng, k);
+		$.each(way_pts, function(c) {
+		  var markerLatLng = new google.maps.LatLng(way_pts[c].lat, way_pts[c].lng);
+		  drawRouteMarker(markerLatLng, c);
 		  });
 	  	var bounds = new google.maps.LatLngBounds();
 		  for (var i = 0; i < markers.length; i++) {
 		    bounds.extend(markers[i].getPosition());
 		  }
-		routes.push(way_pts)
+		// routes.push(way_pts)
 		drawRouteSegments(way_pts);
 		map.panToBounds(bounds);
 		map.fitBounds(bounds);
@@ -196,26 +229,47 @@
 		      var seg = new google.maps.LatLng(response[k].lat, response[k].lng);
 		      routeSegments.push(seg);
 		    });
-		    var cycleRoute = new google.maps.Polyline({
+		    cycleRoute[routeNum] = new google.maps.Polyline({
 		    path: routeSegments,
 		    geodesic: true,
 		    strokeColor: Colors[routeNum],
 		    strokeOpacity: 1.0,
 		    strokeWeight: 2
 	    	});
-	    	cycleRoute.setMap(map);
-		    routes.push(routeSegments);
-		    routeNum++;
-		    //for (var i =0; i < routes.length;i++) {
-			  //  console.log(routes[i]);
-			  //}
-		    }
+	    cycleRoute[routeNum].setMap(map);
+	    routes.push(cycleRoute[routeNum]);
+      addRouteToMenu(routeNum);
+      drawPoIMarker();
+	    routeNum++;
+		  },
+        error: function(err) {
+        console.log(err);
+        alert(err.statusText);
+      }
 	    });
 	};
+
 	function dropDownButton() {
     document.getElementById("myDropdown").classList.toggle("show");
 	}
+      
+  function addRouteToMenu(routeNum) {
+      var div = document.getElementById('myDropdown');
+      menu_item = '<label><input type="checkbox" onclick="checkActiveRoutes(this)" id=route' + routeNum + ' checked>Route' + routeNum + '</label><br>';
+      div.innerHTML = menu_item + div.innerHTML;
+  }
+      
+  function checkActiveRoutes(cb) {
+    var thenum = cb.id.replace( /^\D+/g, '');
+      console.log(thenum);
+      if (!cb.checked) {
+        cycleRoute[thenum].setMap();
+      }
+      else {
+        cycleRoute[thenum].setMap(map);
+      }
+  };
 
-	</script>
+</script>
   </body>
 </html>
